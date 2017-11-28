@@ -1,0 +1,133 @@
+
+
+###############################################################################
+Chapter 07
+###############################################################################
+#INSERT, UPDATE, DELETE
+###############################################################################
+#inserting
+->Write Concern controls the level of persistence / durability of a write operation
+	-in context of sharding/replica sets you would like to make sure that a writing op was strong enough
+->bulk inserts are reducing network load but you only can see the last error and nothing earlier from the same transaction
+->bulk insert in mongo shell does not continue on error, in other drivers by continueOnError flag
+#example for bulk insert
+	db.bulky.insert([{_id:1},{_id:1},{_id:2}])			#throws duplicate key error and aborts directly in mongo shell
+
+
+###############################################################################
+#updating
+->form: db.<coll>.update(query [which docs], update [change completely or edit], upsert[d:false], multi[d:false])
+->_id field cannot be updated
+->multi-document update option is not atomic, 
+	i.e. in case of technical failure will corrupt a db, unless $isolated:1 is added to the query
+
+#example for full update
+	db.fullupdate.insert({_id:1, a:1, b:"zwei"})
+	db.fullupdate.find()
+	db.fullupdate.update({_id:1},{a:2})
+	db.fullupdate.find()								#result {_id:1, a:2}
+-> not the desired behavior for most applications
+
+#example for edit
+	db.partial.insert({_id:1, a:2, b:"drei"})
+	db.partial.find()
+	db.partial.update({_id:1},{$set: {a:4})
+	db.partial.find()										#result {_id:1, a:4, b:"drei"}
+->SCALAR OPERATIONS
+->$set: 	change or create values and with "upsert:true" even create documents
+->$unset: 	remove entries from document / ignores unmatched deletion candidates
+	db.partial.update({_id:1},{$unset: {a:1}})				#result {_id:1, b:"drei"}
+->$rename:	change key names / ignore unmatched keys
+	db.partial.update({_id:1},{$rename: {b:"d",e:"no"}})	#result {_id:1, d:"drei"}
+->$inc:		in-/decrement value fields by provided amount (+/-) or initialize new field with value
+
+->$mul:		multiply value fields by provided amount or initialize new field with zero
+
+->$bit:		bool ops
+
+->$currentDate:		update a document entry with a current timestamp or date
+	db.log.insert({_id:1, a:"active", ts:ISODate("2017-11-09T12:00:00")})
+	db.log.find().pretty()
+	db.log.update({_id:1},{$currentDate:{ts:true, ts_2:{$type:"timestamp"}}})
+	db.log.find().pretty()
+->ARRAY OPERATIONS
+->$push/$pushAll:	first adds a new element, second a new array to an existing array or creates a new field
+	-throws error when applied on non-array fields
+	db.array.insert({_id:1, a:[2,1]})
+	db.array.update({_id:1},{$push:{a:3}})
+	db.array.find()
+	db.array.insert({_id:2, a:[4,5]})
+	db.array.update({_id:{$in : [1,2]}},{$set:{b:2}},false,true)				#add elements to both docs
+	db.array.update({_id:{$in : [1,2]}},{$inc:{"a.7":10}},false,true)			#edit arrays in both docs and waste space
+	->$each	can be used within $push alternatively to $pushAll
+		db.array.update({_id:1},{$pushAll:{a:[9,17]}})
+		db.array.update({_id:2},{$push:{a:{$each:[9,17]}}})
+	->$slice: resize an array with an update "0" for empty, "+/-n" for new length from beginning/end but $each needs to be there, too
+		db.array.update({_id:1},{$push:{a:{$each:[], $slice:-4}}})					#clip to last four elements
+		db.array.update({_id:2},{$push:{a:{$each:[], $slice:4}}})					#clip to first four elements
+	->$sort: sort the elements of an array "1/-1" ascending/descending but $each needs to be there, too
+		#example 1
+		db.array.update({_id:{$in : [1,2]}},{$push:{a:{$each:[],$sort:1}}},false,true)		#sort number arrays in both entries
+		#example 2
+		db.multiarray.insert({_id:1,records:[{id:1,name:"tom"},{id:7,name:"andy"},{id:2,name:"claire"}]})	#create nested array and sort array
+		db.multiarray.update({_id:1},{$push:{records:{$each:[],$sort:{name:1}}}},false,true)				#	records by keyword "name"
+->$addtoset: only add value to a list if the value did not exist before / set behavior
+->$pop: remove first/last element from an array using "-1/1"
+		db.array.update({_id:{$in : [1,2]}},{$pop:{a:1}},false,true)				#remove last element from both entries
+->$pull/pullall: remove all occurences for a single matching value or everything matching a list from an array - ignoring non matching values
+Further:
+->array position index accessed by "name.0-n"
+->when accessing a non-existing index the gap created for reaching there will be bridged with "null" indexes
+->array key positions are fixed and can not be swapped
+
+###############################################################################
+#"upsert"ing
+->still using update function but creating new entries if there are no matching documents
+	db.upsert.insert({_id:1,a:1,b:2})
+	db.upsert.update({_id:2,a:2},{$inc:{a:1},$set:{c:3,p:"o"}},true)	#query data and find missing, upsert creates entries
+																		#	increment entries, adds more entries
+	db.upsert.find()
+	->$setOnInsert: add more entries only on an insert, not on existing update 
+			(e.g. to bring a new entry to certain document standard)
+		db.upsert.update({_id:3,a:2},{$setOnInsert:{c:4,p:"r"}},true)
+
+###############################################################################
+#find and modify (FAM)
+->works only on first object found with similar syntax to update	
+	db.fam.findAndModify({
+		query: {_id:1},
+		update: {$inc: {a:1}},
+		new: false,
+		upsert:true})
+###############################################################################
+#optimistic locking
+->simultaneous writes to the same document can happen unless precautions are taken
+	->A)a query is expanded to capture the document state which exactly needed updating
+	->B)a technical version field is carried along
+	#Example for B
+	db.prods.insert({_id:1,vers:1,val:55})
+	product=db.prods.findOne({_id:1})
+	db.prods.update({_id:product._id,vers:product.vers},{$inc: {vers:1},$set:{val:67}})
+	# update call call will not work a second time unless product pointer is updated
+
+###############################################################################
+#saving for operations beyond update/insert
+	#example which cannot be achieved easily (at all?) with update
+	db.saving.insert({_id:1, a:1, b:2})
+	doc=db.saving.findOne()
+	doc.sum=doc.a+doc.b
+	db.saving.save(doc)
+	db.saving.findOne()
+
+###############################################################################
+#REMOVING documents
+	db.remov.insert({_id:1, a:1, b:2})
+	db.remov.insert({_id:2, a:11, b:22})
+	db.remov.remove({_id:2})	#query
+	db.remov.find()
+	#remove all - slow
+	db.remov.remove({})
+	#remove all - fast
+	db.remov.drop()
+
+	

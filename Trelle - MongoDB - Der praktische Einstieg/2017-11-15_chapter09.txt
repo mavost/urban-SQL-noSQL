@@ -1,0 +1,161 @@
+
+
+###############################################################################
+Chapter 09
+###############################################################################
+#Aggregation
+###############################################################################
+#Three categories of aggregation
+->1)simple aggregation queries (counting, summation, ...)	low functionality, high performace
+->2)Aggregation Framework									intermediate functionality and performace
+->3)MapReduce												high functionality, low performace
+###############################################################################
+1) simple aggregation queries
+->count(): counts number of documents in a collection or under a cursor
+	db.docs.count()		#returns 0
+	db.docs.insert({a:"sheep"})
+	db.docs.count()		#returns 1
+	
+	db.tweets.find({"user.followers_count":{$ge:400}}).count()		#returns number of tweets from users with more than 400 followers
+->distinct(): returns list of unique entries for an key
+->	does not work to get a list of unique keys themselves unless a key/value property is in place(chapter 8)
+	use twitter
+	db.tweets.distinct("user.timezone")					#list all different timezones in the collection
+
+->group(): groups data according to similar keys and does basic summation/counting
+->	does not work on sharded systems
+	parameters:
+	key: grouping target
+	"reduce: function(curr, result)": which operations should be used for the aggregation; curr/result are input output documents
+	initial: starting conditions within resulting document
+	keyf: grouping dynamic key, optional
+	cond: condition, optional
+	"finalize: function(result)": work to be run on the output documents
+
+	#example is important
+	db.tweets.group({									#list all different timezones in the collection and count users
+		key: {"user.time_zone":1},
+		initial: {count:0},
+		reduce: function(curr,result){result.count++;}
+	})
+	#again for pasting
+	db.tweets.group({key: {"user.time_zone":1}, initial: {count:0}, reduce: function(curr,result){result.count++;}})
+	#more impressive example
+	db.tweets.group({									#list all different timezones in the collection and count total 
+														#	users and average followers per time zone
+		keyf: function(doc) {							#modify output key
+			return {timezone: doc.user.time_zone}},
+		cond: {"user.time_zone":{$ne :null}},			#exclude unspecified keys
+		initial: {followers:0, total_users:0},
+		reduce: function(curr,result){
+			result.total_users++;
+			result.followers+=curr.user.followers_count;},
+		finalize: function(result){
+			result.avg_followers = 
+			Math.round(result.followers/
+				result.total_users);}
+	})
+###############################################################################
+2) Aggregation Framework
+->create a pipeline of processing stages containing expressions and running documents through it
+->many expressions exist
+	-aggregation ($min, $max, $sum, ...)
+	-math ($add, $multiply, ...)
+	-logical ops ($and, $or, ...)
+	-comparisons ($eq, $tl, ...)
+	-data stream ($cond, $ifnull, ...)
+	-string manipulation ($tolower, ...)
+	-date operations ($dayOfYear, ...)
+	->$project, $group, $redat have a variable definition and evaluation mechanism $let and $map
+	->$literal prevents the de-reference of an expression
+	#how to use?
+	db.tweets.aggregate(<pipeline>)
+	db.tweets.aggregate( [<pipeline>] )
+	db.runCommand( {aggregate: "tweets",
+		pipeline:<pipeline>})
+	#example
+	db.tweets.aggregate(
+	{$match:{"user.lang":"de"}},			#get German speaking users
+	{$group:{_id:{							#group tweets by user id and grab highest number of followers
+		name:"$user.name"},
+		follower_count:{$max: "$user.followers_count"}
+	}},
+	{$sort:{follower_count:-1}},			#sort result descending
+	{$limit:3}								#keep top 3
+	)
+->pipeline operations:
+	->referencing fields need to have "$" in front of field name (e.g. {$project:{_id:0, content:"$text"}})
+	->pipeline functions $match,$sort,$limit,$skip can use search indexes when either placed 
+		at the beginning of pipeline or in front of a $project, $unwind, $group
+	#Keywords	
+	-$match: filter documents
+	-$project: rename / add / remove entries in a document
+		#example
+		db.tweets.aggregate({$project:{text:1}})				#only pass text along (and _id)
+		db.tweets.aggregate({$project:{_id:0,text:1}})		#only pass text along
+		
+		db.tweets.aggregate({$project:{_id:0, content:"$text"}})
+	-$limit: restrict pipeline throughput
+		#example below
+	-$skip: jumps a number of documents
+	-$group: grouping as in 1)
+		->embedded documents can only be passed along via the "_id: $nest" field
+		#examples
+		db.tweets.aggregate({$group:{_id:"$user.lang", number_tweets:{$sum:1}}},{$sort:{number_tweets:-1}})
+		db.tweets.aggregate({$group:{_id:{background:"$user.profile_use_background_image",
+										language:"$user.lang"}, number_tweets:{$sum:1}}},{$sort:{number_tweets:-1}})
+	-$sort: inner pipeline sort
+		#example for limiting input, sorting, limit output, reformatting
+		db.tweets.aggregate({$limit:1000},{$sort:{"user.friends_count":-1}},{$limit:5},
+										{$project:{_id:0, content:"$text", friends:"$user.friends_count"}})
+	-$unwind: splits an array antries into individual documents
+		#examples
+		db.tweets.aggregate({$project:{_id:0, tweet_content:"$text", mentioned_users:"$entities.user_mentions.name"}},
+										{$unwind:"$mentioned_users"})
+			#crop tweet data to text and link array, expand link array, group by links and count their number, 
+			#	sort max-2-min, show topten
+		db.tweets.aggregate({$project:{_id:0, tweet_content:"$text", links:"$entities.urls.url"}},
+										{$unwind:"$links"}, {$group:{_id:"$links",count:{$sum:1}}},{$sort:{count:-1}},{$limit:10})
+	-$redact: dynamic filtering - looks complicated "$$DESCEND", "$$PRUNE", "$$KEEP"
+	-$out: write pipeline result to a document
+		#example
+		db.tweets.aggregate({$limit:1000},{$sort:{"user.friends_count":-1}},{$limit:5},
+										{$project:{_id:0, content:"$text", friends:"$user.friends_count"}},{$out:"top_users"})
+###############################################################################
+3) MapReduce
+	->Input, Map, Group/Sort, Reduce, Output
+	#example
+	db.documents.insert({text:"A simple dynamic array can be constructed by allocating an array of fixed-size, typically larger than the number of elements immediately required. The elements of the dynamic array are stored contiguously at the start of the underlying array, and the remaining positions towards the end of the underlying array are reserved, or unused."})
+	db.documents.insert({text:"Elements can be added at the end of a dynamic array in constant time by using the reserved space, until this space is completely consumed. When all space is consumed, and an additional element is to be added, then the underlying fixed-sized array needs to be increased in size."})
+	db.documents.insert({text:"Typically resizing is expensive because it involves allocating a new underlying array and copying each element from the original array. Elements can be removed from the end of a dynamic array in constant time, as no resizing is required. The number of elements used by the dynamic array contents is its logical size or size, while the size of the underlying array is called the dynamic array's capacity or physical size, which is the maximum possible size without relocating data."})
+	map=function(){
+					if(!this.text){
+						return;}
+					this.text.split(' ').forEach(function(word){
+						//remove blanks
+						word=word.replace(/\s/g, "");
+						//remove punctuation
+						word=word.replace(/.,/g,"");
+						//emit word
+						if(word!=""){
+							emit(word.toLowerCase(),1)}
+					});
+	};
+	reduce=function(key, values){				#this function behavior can fail in certain cases
+					return values.length;
+	};
+	Alternative:	reduce=function(key, values){				#this function behavior can fail in certain cases
+	Alternative:				count = 0;
+	Alternative:				for(var i in values) {
+	Alternative:					count+=values[i];
+	Alternative:				}
+	Alternative:				return count;
+	Alternative:	};
+	db.documents.mapReduce(map,reduce,
+					{out:"word_count"});
+	#182 key-value pairs emitted and 92 pairs remained after reduction
+	db.word_count.find().sort({"value":-1});
+	#the(19), array(10), of(9), ...
+	->performance bottleneck is the JS Engine
+	->if an operation can be solved by the Aggregation Framework one should use that instead or move to
+		Hadoop/Spark integration with mongo over calling mapReduce() from within the mongoDB framework

@@ -1,0 +1,141 @@
+#MongoDB
+#incoming	port:	27017
+#http port:	28017 using REST API in cfg --> http://localhost:28017/
+#mongod --dbpath C:\SQLdata\mongo-db
+#mongod --httpinterface --rest --dbpath C:\SQLdata\mongo-db
+#with edits to mongod.cfg
+#Install Service with admin prompt: mongod.exe" --config "C:\Program Files\MongoDB\Server\3.4\mongod.cfg" --install
+#run service 
+
+###############################################################################
+Chapter 03
+/*
+acces via 	-driver
+			-HTTP interface
+			-REST interface
+			-mongo shell
+REST access
+http://localhost:28017/twitter/tweets/
+
+mongo shell starting in database of choice:
+c:\> mongo localhost:27017/twitter
+*/
+###############################################################################
+#Mechanism
+Data stored in RAM memory and journal entry generated - nano seconds 
+Memory to Disk sync in 60s
+	--syncdelay <seconds>
+Journaling to disk in 100ms intervals
+	--journalCommitInterval <mseconds>
+
+###############################################################################
+#Data base structure
+# list databases
+	show dbs
+ name space 16MB equivalent to 24000 entries (db.ns)
+ data space allocation in files of exponentially increasing size capped at 2GB 
+ 			64MB (db.1) -> 128MB (db.2) ->...->2GB (db.6) -> 2GB (db.7) -> ...
+ naming conventions/restrictions
+ individual topics for each db:
+	-sharding
+	-permissions / access
+	-profiling / indexing
+	-locking
+ internal dbs
+	-local
+	-admin
+	-config
+#call current db overview
+	db.stats()
+###############################################################################
+#Collection structure
+collection -> pile of documents
+free of schemas := structure, ordering
+however
+ structure is still desired for performance and usability reasons
+ naming conventions/restrictions exist
+#created implicitly through insert
+	db.dokumente.insert({dog:"Schnautzer"})
+#created explicitly - mandatory in case of capped collections
+	db.createCollection("dokumente")
+individual topics for each collection:
+	-index definition
+	-CRUD-operations
+	-query building
+	-MapReduce / Aggregation
+	-sharding
+#call current db overview of collections
+	show collections
+#more details
+	db.getCollectionInfos()
+collections are stored in "extents" dedicated to one namespace
+#call a collection's storage details
+#subset
+	db.<collection>.validate()
+#all
+	db.<collection>.validate(true)
+padding factor determines how quickly the db needs to reallocate on disk/mem? deprecated?	
+#overview
+	db.<collection>.stats()
+
+###############################################################################
+#System namespaces have changed w.r.t. book
+
+###############################################################################
+#Capped collection
+ FIFO collection which flushes "older" documents once the threshold is reached
+#usage
+	db.createCollection("capping",{capped: true, size: 1048576, max: 10})
+	db.capping.validate()
+
+###############################################################################
+#ID, Primary key, Object ID
+ ObjectID is a quasi-unique identifier built by time stamp, machine id, process id, document counter
+ 
+ primary in a collection is called _id and can either be set manually or would be either provided by
+	client software or MongoDB itself (using Object ID)
+ beware of possible collision when manually administering IDs
+#manual insert
+	db.index.insert({_id:1, animal:"dog"})
+
+###############################################################################
+#Embedding
+ Documents can be embedded, i.e. contained within other documents and accessed using dot notation
+ 
+ 100 levels of nesting permitted, making the DB suited to store programming language objects
+  
+ #example
+	doc={sub:{embedded:true}}
+	doc.sub
+
+###############################################################################
+#Arrays
+ following JS notation
+#Examples
+	[] #empty array
+	[1,2,3,4,5]
+	a=["text", 2, {three:3.0}] #mixed
+	a[0] -> "text"
+	a[2].three -> 3.0
+
+###############################################################################
+#References 
+ provide shortcuts to favorite documents
+#Examples
+	favdoc={ $ref: "tweets", $id: db.tweets.findOne()._id }
+	db[favdoc.$ref].findOne({_id: favdoc.$id})
+
+###############################################################################
+#Indexes
+ optimize queries for collections
+#show indexes
+	db.collection.getIndexes() 
+	
+###############################################################################
+#Replication Sets
+ Chapter 4
+
+###############################################################################
+#Sharding
+ Chapter 5
+ 

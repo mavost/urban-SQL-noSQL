@@ -1,0 +1,86 @@
+#MongoDB
+#incoming	port:	27017
+#http port:	28017 using REST API in cfg --> http://localhost:28017/
+#mongod --dbpath C:\SQLdata\mongo-db
+#mongod --httpinterface --rest --dbpath C:\SQLdata\mongo-db
+#with edits to mongod.cfg
+#Install Service with admin prompt: mongod.exe" --config "C:\Program Files\MongoDB\Server\3.4\mongod.cfg" --install
+#run service 
+
+###############################################################################
+#Calculations and Control Structures
+var a=2
+b=a+2
+for (i=0;i<5;i++){print(i)}
+
+#Overview
+#show database
+show dbs
+#switch/create database, test is default at start
+use test
+#show collections in db
+show collections
+
+#Variable assignment
+doc ={hello:"MongoDB"}
+
+#collection creation and document insertion
+db.dokumente.insert(doc)
+db.dokumente.insert({a:1, b:"zwei"})
+db.dokumente.insert({a:2, b:"drei"})
+
+#document retrieval
+db.dokumente.count()
+#list all
+db.dokumente.find()
+#list some
+db.dokumente.find({a:2})
+#list some, turn off some data
+db.dokumente.find({a:2},{_id:0})
+db.dokumente.find({a:2},{_id:0,b:0})
+
+#better display
+db.autoren.insert({titel:"MongoDB Einpraktischer Einstieg",autoren:[{name: "N.N."},{name:"Tobias Trelle"}]})
+db.autoren.find().pretty()
+
+#document update replaces whole entry and not subset
+db.dokumente.update({a:2},{b:"vier"})
+db.autoren.find({}, {_id:0}).pretty()
+
+#document removal
+#remove some
+db.dokumente.remove({a:2})
+#remove all
+db.dokumente.remove()
+
+#restore previous state
+db.dokumente.insert(doc)
+db.dokumente.insert({a:2, b:"drei"})
+db.dokumente.insert({a:1, b:"zwei"})
+
+#remove collection
+db.dokumente.drop()
+show collections
+
+#restore previous state
+db.dokumente.insert(doc)
+db.dokumente.insert({a:2, b:"drei"})
+db.dokumente.insert({a:1, b:"zwei"})
+
+#create db from external source
+#call on prompt: mongorestore -d tweets c:/tmp/tweets.bson
+show collections
+show dbs
+use twitter
+db.tweets.count()
+db.tweets.find().pretty()
+db.tweets.find().limit(3).pretty()
+
+#create db and start collection with different data structures as documents
+use shop
+db.produkte.insert({ typ:"dvd", titel: "Lost Highway", regie: "David Lynch"})
+db.produkte.insert({ typ:"cd", titel: "Highway to Hell", artist: "AC/DC"})
+#query across different document types
+db.produkte.find({titel:/Highway/}).pretty()
+db.produkte.find({typ:/v/}).pretty()
+db.produkte.find({titel:/Highway/,typ:"cd"}).pretty()

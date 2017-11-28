@@ -1,0 +1,13 @@
+
+
+###############################################################################
+Chapter 10
+###############################################################################
+#Further Functionality
+###############################################################################
+#GridFS
+->command mongofiles is used to read files larger than 16MB into the database
+->	they are chopped up and stored in the chunks collection
+	mongofiles -d external put mongo.exe						#copy mongo client into database "external"
+	mongofiles -d external -l mongosh.exe get mongo.exe			#retrieve mongo.exe and copy to mongosh.exe			
+	

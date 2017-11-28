@@ -1,0 +1,150 @@
+
+
+###############################################################################
+Chapter 06
+###############################################################################
+Query
+only works within a single collection, no JOIN
+returns cursor for iteration over result 
+
+#change number of initial return values
+	DBQuery.shellBatchSize = 10
+#run a query and control output
+	db.points.drop()
+	show collections
+	for (var i=0; i<10; i++) db.points.insert({x:i, y:11-i})	#generate entries
+	show collections
+	db.points.find({},{_id:0,y:0})								#query and display by exclusion, _id needs extra treatment
+	db.points.find({},{_id:0,x:1})								#query and display by inclusion
+	db.points.find({x:{$in:[1,7]}},{_id:0})						#query a list of options
+	db.points.find({x:{$nin:[1,7]}},{_id:0})					#exclude a list of options
+	db.points.find({$or: [{x:1},{x:6}]},{_id:0})				#logical statements, e.g. $not, $and, $gt, $lt, $ne, $lte, $gte
+	db.points.find({})
+	db.subs.remove()											#nested queries
+	db.subs.insert({sub: {a:1,b:"zwei",c:{drei:4, vier:5}}})
+	db.subs.find({"sub.a":1})									#need double quotations
+	db.subs.find({"sub.c":{vier:5,drei:4}})						#nested find FAILS -> order matters as well
+	db.subs.find({"sub.c":{drei:4,vier:5}})						#nested find WORKS
+	db.points.find({})
+	db.arr.insert({a:[1,2]})									#find in arrays
+	db.arr.insert({a:[2,3,4]})
+	db.arr.find({a:2},{_id:0})									#returns both documents
+	db.arr.find({a:{$all:[3,4]}},{_id:0})						#subarray with $all
+	db.arr.find({a:{$size:3}},{_id:0})							#number of array elements with $size
+	db.arr.find({a:{$slice:[-2:1]}},{_id:0})					#slicing of array elements with $slice
+	db.types.remove()
+	db.types.insert({x:1})										#find documents containing a keyword with $exists
+	db.types.insert({y:null})									
+	db.types.find({x:{$exists:true}})
+	db.types.find({y:{$type:10}})								#datatypes have a list id to queried with $type, e.g. 10 is "null"
+																
+#run a query using a cursor	
+	var curs=db.points.find()
+	while (curs.hasNext()){printjson(curs.next())}
+	or:
+	curs.forEach(printjson)
+#pretty output
+	var curs=db.points.find().pretty()
+	curs.forEach(printjson)
+#limited output
+	var curs=db.points.find().limit(4)
+	curs.forEach(printjson)
+#skipped output (usually expensive operation due to chaining with expensive find algorithm)
+	var curs=db.points.find().skip(10)
+	curs.forEach(printjson)
+	var curs=db.points.find().skip(1).limit(1)
+#sort function (keyword: 1/-1:asc-/descending
+	#has a clearly defined sort order to be able to handle different document types in the value list
+	#	e.g. numbers << strings << bool
+	#$natural keyword indicates natural order of when a document was added to the collection (unshifted)
+	db.points.find({},{_it:0}).sort({x:-1})
+	db.points.find({},{_it:0}).sort({x:-1}).limit(3)	#first three elements from descending list
+
+#indexing
+	->persistent in db
+	->no compression so size might matters
+	->supports find operation whenever an indexed key is involved
+	->up to 64 indexes per collection can exist
+	->index needs to fit in RAM, otherwise performance drags
+	->limiting the output to indexed fields can increase performance(covered queries)
+
+	db.tweets.ensureIndex({text:1})						#index all tweet texts in the collection
+	db.tweets.getIndexKeys()							#list existing Indexes
+	
+	db.numbers.find({x:{$gt 2}, y:{$lt 5}}).hint({x:1})	#signals, overiding the internal suggestion, which index should support an ambigous query
+														#	where several indexes could be used
+	db.numbers.find(QUERY).explain()					#displays which mechanisms are employed for a query
+	
+	#time to live (TTL) indexes can be used to limit the life time of a document in the collection
+	db.ttl.ensureIndex({t:1}, {expireAfterSeconds:600})
+	db.ttl.insert(DOC1)
+	db.ttl.insert(DOC2)
+	db.ttl.find(QUERY)
+	-> Listing
+	db.ttl.find(QUERY)#after 10 Minutes
+	-> Listing empty
+
+	#hashed index
+	dh.hash.ensureIndex({v:"hashed})
+#profiling
+	->starting mongod with -profile options logs the performance of the db operation in querying
+	->customizable to define what a "slow" performance is based on the population of query entries
+#DB tools
+	->mongotop lists stats on collection read/write 
+	->mongostat lists more detailed stats on collection functions used
+
+#Geodata Queries using simple points or GeoJSON format (points, lines, polygons)
+	
+	->points are documents where the first two elements are read as numbers on a geoid or plane
+	->"2D" index for planar, "2Dsphere" for spatial data
+	db.pts.drop()
+	db.pts.insert({_id:"A", coord: [.1,-.1]})
+	db.pts.insert({_id:"B", coord: {x: .75, y: -.75}})
+	db.pts.insert({_id:"C", coord: {foo:.5, bar:.5}})
+	db.pts.insert({_id:"D", coord: [-.5,-.5,4711]})			#4711 not used as coordinate
+	
+	db.pts.ensureIndex({coord: "2d"})						#takes care of the 2D geodata behavior
+	db.pts.find({coord:{$near: [0,0], $maxDistance: 0.8}})	#circular search
+	db.pts.find({coord:{$geoWithin: {$box: [[.25,.25],[1.0,1.0]]}}})
+	#inside polygon search
+	#$center/$radius search equivalent to $near/$maxDistance
+	->geoHash Indexing is useful to have a differentiation of the data into quadrants
+
+	->GeoJSON has many more object types than points
+	->is supported by many 3rd party apps
+	db.cities.drop()
+	db.cities.ensureIndex({pos: "2dsphere"})
+	DUS={type: "Point", coordinates:[6.81, 51.235]}				#reference points
+	db.cities.insert({_id:"Düsseldorf", pos:DUS})
+	db.cities.insert({_id:"Köln", pos:{type: "Point", coordinates:[6.959, 50.943]}})
+	db.cities.insert({_id:"Berlin", pos:{type: "Point", coordinates:[13.408, 52.518]}})
+	db.cities.find({pos:{$geoNear:{$geometry:DUS,$maxDistance:70000}}},{_id:1})			#search entries 70km within Düsseldorf radius
+	
+#Full text search indexing works as follows in MongoDB
+->Tokenizer	creates word list (remove punctuation,...)
+->Stop words are filtered (articles etc. removed)
+->Stemmer hashes remaining words to a word stem 
+
+	db.befehle.drop()
+	db.befehle.insert({befehl:"Du musst noch warten!"})
+	db.befehle.ensureIndex({befehl:"text"},{default_language: "german"})
+	db.befehle.find({$text:{$search:"warte"}})					#even imprecise words are found due to the same stamming reduction of the search word
+	
+	#work on the twitter data
+	db.tweets.copyTo("textsearch")
+	db.textsearch.remove({"user.lang":{$ne:"en"}})
+	db.tweets.aggregate([{$project: {_id:0,lang:"$user.lang"}},{$group:{_id:"$lang",n:{$sum:1}}}])			#aggregation to summarize n.o. tweets per language
+	db.textsearch.ensureIndex({text:"text"})
+	db.textsearch.find({$text: {$search:"mongodb"}}).pretty()
+	db.textsearch.find({$text: {$search:"mongodb"}}).explain()
+	db.textsearch.find({$text: {$search:"mongodb"}},{_id:0, text:1})							#covered query, again
+	db.textsearch.findOne({$text: {$search:"internet"}})
+	db.textsearch.find({$text: {$search:"internet"},"user.followers_count":{$gt:400}}).count()				#37 results of "internet" tweeters
+																											#	with more than 400 followers
+	-> in this index the results of several search words are chained using logical "OR"
+	-> a -SEARCHWORD will exclude a word from the results list
+	-> search phases inside a JS '"SEARCH PHRASE"' are reducing results
+	-> weighted search is also an interesting options
+	db.mails.ensureIndex({subject: "text", body: "text"},{weights:{subject: 10, body: 1}})					#create two text search indexes and find
+																											#	will prioritise hits from the subject 
+																											#   line tenfold using {$meta: "textScore"}

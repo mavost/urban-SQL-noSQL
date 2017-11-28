@@ -1,0 +1,140 @@
+
+
+###############################################################################
+Chapter 08
+###############################################################################
+#RELATIONS, CARDINALITY
+###############################################################################
+#one-to-one / 1:1
+->usually one would put the two documents into the same collection
+
+	test.a {_id: 	ObjectId("a1"),
+			b_id:	ObjectId("b1")
+			//etc...
+		   }
+		
+	test.b {_id: 	ObjectId("b1"),
+			//etc...
+		   }
+	//a to b
+	var a= db.a.find(...)
+	var b= db.b.find(_id: a.b_id)	#a.b_id is variable call, not collection document call
+	
+	//b to a
+	var b= db.b.find(...)
+	var a= db.a.find(b_id: b._id)	#b.id is variable call, not collection document call
+	
+	#further add an index across b_id
+	db.a.ensureIndex({b_id:1}, {unique:true})
+
+###############################################################################
+#one-to-many / 1:n relation within a document
+->embedded arrays can be used to easily achieve this
+	test.c {_id: 	ObjectId("c001"),
+			orders:[
+				{
+				quantity: 15,
+				product_id: ObjectId("pxyz"),
+				//etc...
+				},
+				{
+				quantity: 3,
+				product_id: ObjectId("qxyz"),
+				//etc...
+				},
+				//etc...
+			],
+			//etc...
+		   }
+
+###############################################################################
+#one-to-many / 1:n relations between collections can be realized in the following two ways
+->which method is preferred depends on the amount of querying in either direction
+	->1) add a key list to the single object
+	test.customer{
+		_id: ObjectId("cu001"),
+		orders: [
+			ObjectId("or001"),
+			ObjectId("or154"),
+			//etc...
+		],
+		//etc...
+	}
+	test.orders
+	{
+		_id:ObjectId("or001"),
+		date: IsoDate("2013-10-11")
+	},
+	{
+		_id:ObjectId("or002"),
+		date: IsoDate("2013-10-12")
+	},
+	//etc...
+	->match orders to customer
+	var qcust=db.customer.find(...)
+	var qorde=db.orders.find({_id:{$in:qcust.orders}})	#qcust.orders is variable call, not collection document call
+	->match customer to orders
+	var qorde=db.order.find(...)
+	var qcust=db.custumer.find({orders:qorde._id})		#see, above
+	
+	->2) add a single key to each of the multi objects
+	#example omitted
+
+###############################################################################
+#many-to-many / m:n relations between collection are realized without an additional
+#	associative table (also known as cross-reference table)
+-> implemented with both of the above 1:n index objects as lists
+	test.object1{
+		_id: ObjectId("ob1_001"),
+		obrefs: [
+			ObjectId("ob2_001"),
+			ObjectId("ob2_154"),
+			//etc...
+		],
+		//etc...
+	}
+	test.object2
+	{
+		_id:ObjectId("or2_001"),
+		obrefs: [
+			ObjectId("ob1_007"),
+			ObjectId("ob1_121"),
+			//etc...
+		],
+		//etc...
+	}
+
+###############################################################################
+#classes including inheritance concepts can be easily stored as documents in a mongoDB
+#	since it is free of schemas
+-> a class discriminator "category" is usually added to the document
+-> simple persistence of class objects is possible
+
+###############################################################################
+#further use of mongoDB over other noSQL
+->using key:value pairs within a property template mimicking a key/value store: e.g. Redis DB
+->saves us from running out of indexing space and growing too many variable document entries
+	test.product
+	{
+		_id:ObjectId("pr_001"),
+		storage_loc: "shelf01",
+		category: "Xyas",
+		//etc...
+		properties: [
+			{
+				key:"color",
+				value:"red"
+			},
+			//etc...
+		],
+		//etc...
+	}
+	#adding an key/val index to wrap everything up
+	db.product.ensureIndex({"properties.key":1,"properties.value":1})
+->time variance in data warehousing: https://de.wikipedia.org/wiki/Temporale_Datenhaltung
+->creeping schema migration
+
+###############################################################################
+#limitations
+->no joins
+->no document-spanning atomic transactions 
